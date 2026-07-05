@@ -37,10 +37,22 @@ export function Inventario() {
   const totalItems = productos.reduce((s, p) => s + Number(p.stock), 0);
   const lowStock = productos.filter((p) => Number(p.stock) <= Number(p.stock_minimo) && Number(p.stock_minimo) > 0);
 
+  // Movimientos de tipo AJUSTE para la pestaña Ajustes
+  const ajustes = movimientos.filter((m) => m.tipo_movimiento === 'AJUSTE');
+
   const applyAjuste = async () => {
     if (!ajusteForm.producto_id) { setToast('Seleccione un producto'); return; }
     if (!ajusteForm.cantidad) { setToast('Ingrese una cantidad válida'); return; }
-    const delta = ajusteForm.tipo === 'SALIDA' ? -Math.abs(ajusteForm.cantidad) : Math.abs(ajusteForm.cantidad);
+    // Para AJUSTE se permite positivo o negativo según lo ingresado.
+    // Para ENTRADA siempre positivo, para SALIDA siempre negativo.
+    let delta: number;
+    if (ajusteForm.tipo === 'ENTRADA') {
+      delta = Math.abs(ajusteForm.cantidad);
+    } else if (ajusteForm.tipo === 'SALIDA') {
+      delta = -Math.abs(ajusteForm.cantidad);
+    } else {
+      delta = ajusteForm.cantidad; // AJUSTE: respeta el signo ingresado
+    }
     const { error } = await adjustInventory(ajusteForm.producto_id, delta, {
       tipo: ajusteForm.tipo,
       documento_tipo: 'AJUSTE',
@@ -172,7 +184,37 @@ export function Inventario() {
             </div>
           )
         ) : (
-          <EmptyState icon={<TrendingUp size={28} />} title="Ajustes de inventario" subtitle="Use el botón 'Nuevo ajuste' para registrar entradas, salidas o correcciones." />
+          ajustes.length === 0 ? (
+            <EmptyState icon={<TrendingUp size={28} />} title="Sin ajustes registrados" subtitle="Use el botón 'Nuevo ajuste' para registrar entradas, salidas o correcciones." />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold">Fecha</th>
+                    <th className="px-4 py-3 text-left font-semibold">Producto</th>
+                    <th className="px-4 py-3 text-right font-semibold">Cantidad</th>
+                    <th className="px-4 py-3 text-right font-semibold">Stock resultante</th>
+                    <th className="px-4 py-3 text-left font-semibold">Motivo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ajustes.map((m) => {
+                    const positive = Number(m.cantidad) >= 0;
+                    return (
+                      <tr key={m.id} className="table-row">
+                        <td className="px-4 py-3 text-slate-600">{formatDateTime(m.created_at)}</td>
+                        <td className="px-4 py-3 font-semibold text-slate-800">{m.producto?.nombre ?? '—'} <span className="text-xs text-slate-400 font-mono">({m.producto?.sku})</span></td>
+                        <td className={`px-4 py-3 text-right font-bold ${positive ? 'text-emerald-700' : 'text-red-700'}`}>{positive ? '+' : ''}{Number(m.cantidad)}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-slate-900">{Number(m.stock_resultante)}</td>
+                        <td className="px-4 py-3 text-slate-600 text-xs">{m.motivo ?? '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )
         )}
       </div>
 
@@ -195,8 +237,16 @@ export function Inventario() {
               </select>
             </div>
             <div>
-              <label className="label">Cantidad</label>
-              <input type="number" step="0.01" className="input" value={ajusteForm.cantidad} onChange={(e) => setAjusteForm({ ...ajusteForm, cantidad: Number(e.target.value) })} />
+              <label className="label">
+                Cantidad{ajusteForm.tipo === 'AJUSTE' ? ' (negativo para reducir)' : ''}
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                className="input"
+                value={ajusteForm.cantidad}
+                onChange={(e) => setAjusteForm({ ...ajusteForm, cantidad: Number(e.target.value) })}
+              />
             </div>
           </div>
           <div>

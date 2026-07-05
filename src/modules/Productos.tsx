@@ -76,7 +76,8 @@ export function Productos() {
 
   const doDelete = async () => {
     if (!confirmDelete) return;
-    await supabase.from('productos').delete().eq('id', confirmDelete.id);
+    const { error } = await supabase.from('productos').delete().eq('id', confirmDelete.id);
+    if (error) { setToast(error.message); setConfirmDelete(null); return; }
     await logAudit({ modulo: 'productos', accion: 'DELETE', tabla_afectada: 'productos', registro_id: confirmDelete.id, valor_previo: confirmDelete as any });
     setToast('Producto eliminado');
     load();
@@ -169,6 +170,8 @@ export function Productos() {
         )}
       </div>
 
+      {/* Stock is managed exclusively via Inventario adjustments — the edit form
+          intentionally omits the 'Stock actual' field to preserve the kardex audit trail */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar producto' : 'Nuevo producto'} size="lg">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div className="sm:col-span-2">
@@ -215,12 +218,6 @@ export function Productos() {
             <label className="label">Stock mínimo</label>
             <input type="number" step="0.01" className="input" value={form.stock_minimo ?? 0} onChange={(e) => setForm({ ...form, stock_minimo: Number(e.target.value) })} />
           </div>
-          {editing && (
-            <div>
-              <label className="label">Stock actual</label>
-              <input type="number" step="0.01" className="input" value={form.stock ?? 0} onChange={(e) => setForm({ ...form, stock: Number(e.target.value) })} />
-            </div>
-          )}
           <div className="sm:col-span-3">
             <label className="label">Descripción</label>
             <textarea className="input" rows={2} value={form.descripcion ?? ''} onChange={(e) => setForm({ ...form, descripcion: e.target.value })} />

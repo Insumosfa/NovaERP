@@ -25,13 +25,26 @@ export function Reportes() {
       const { data } = await supabase.from('productos').select('sku, nombre, stock, stock_minimo, costo, precio, unidad, categoria:categorias(nombre)').order('nombre');
       rows = (data ?? []).map((p: any) => ({ ...p, valor_inventario: Number(p.stock) * Number(p.costo), valor_venta: Number(p.stock) * Number(p.precio) }));
     } else if (active === 'utilidades') {
-      const { data } = await supabase.from('detalle_ventas').select('cantidad, precio_unitario, costo_unitario, subtotal, venta:ventas(numero, fecha, estado)').gte('venta.fecha', from).lte('venta.fecha', to).neq('venta.estado', 'CANCELADA');
-      rows = (data ?? []).map((d: any) => ({
-        numero: d.venta?.numero, fecha: d.venta?.fecha,
-        ingreso: Number(d.subtotal), costo: Number(d.cantidad) * Number(d.costo_unitario),
-        utilidad: Number(d.subtotal) - Number(d.cantidad) * Number(d.costo_unitario),
-        margen: d.subtotal > 0 ? ((Number(d.subtotal) - Number(d.cantidad) * Number(d.costo_unitario)) / Number(d.subtotal)) * 100 : 0,
-      }));
+      // Two-step query: fetch ventas IDs in range first, then fetch detalle
+      const { data: ventasEnRango } = await supabase
+        .from('ventas')
+        .select('id')
+        .gte('fecha', from)
+        .lte('fecha', to)
+        .neq('estado', 'CANCELADA');
+      const ventaIds = (ventasEnRango ?? []).map((v: any) => v.id);
+      if (ventaIds.length > 0) {
+        const { data: detalles } = await supabase
+          .from('detalle_ventas')
+          .select('cantidad, precio_unitario, costo_unitario, subtotal, venta:ventas(numero, fecha, estado)')
+          .in('venta_id', ventaIds);
+        rows = (detalles ?? []).map((d: any) => ({
+          numero: d.venta?.numero, fecha: d.venta?.fecha,
+          ingreso: Number(d.subtotal), costo: Number(d.cantidad) * Number(d.costo_unitario),
+          utilidad: Number(d.subtotal) - Number(d.cantidad) * Number(d.costo_unitario),
+          margen: d.subtotal > 0 ? ((Number(d.subtotal) - Number(d.cantidad) * Number(d.costo_unitario)) / Number(d.subtotal)) * 100 : 0,
+        }));
+      }
     } else if (active === 'cartera') {
       const { data } = await supabase.from('cuentas_por_cobrar').select('*, cliente:clientes(nombre), venta:ventas(numero)').order('fecha_emision', { ascending: false });
       rows = data ?? [];
@@ -164,7 +177,7 @@ function computeTotals(active: ReportType, data: any[]): { label: string; value:
     return [
       { label: 'Total ventas', value: formatCurrency(data.reduce((s, r) => s + Number(r.total ?? 0), 0)) },
       { label: 'Total cobrado', value: formatCurrency(data.reduce((s, r) => s + Number(r.monto_pagado ?? 0), 0)) },
-      { label: 'Saldo pendente', value: formatCurrency(data.reduce((s, r) => s + Number(r.saldo ?? 0), 0)) },
+      { label: 'Saldo pendiente', value: formatCurrency(data.reduce((s, r) => s + Number(r.saldo ?? 0), 0)) },
       { label: 'N° documentos', value: String(data.length) },
     ];
   }

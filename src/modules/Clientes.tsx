@@ -80,7 +80,8 @@ export function Clientes() {
 
   const doDelete = async () => {
     if (!confirmDelete) return;
-    await supabase.from('clientes').delete().eq('id', confirmDelete.id);
+    const { error } = await supabase.from('clientes').delete().eq('id', confirmDelete.id);
+    if (error) { setToast(error.message); setConfirmDelete(null); return; }
     await logAudit({ modulo: 'clientes', accion: 'DELETE', tabla_afectada: 'clientes', registro_id: confirmDelete.id, valor_previo: confirmDelete as any });
     setToast('Cliente eliminado');
     load();

@@ -76,15 +76,34 @@ export function Compras() {
     const { error: detErr } = await supabase.from('detalle_compras').insert(detalles);
     if (detErr) { setToast(detErr.message); return; }
 
-    // Inventory effect: each line adds stock
+    // Inventory effect: each line adds stock (with rollback on error)
+    const processedLines: string[] = [];
+    let inventoryError: string | null = null;
     for (const l of form.lines) {
-      const { error } = await adjustInventory(l.producto_id, Math.abs(l.cantidad), {
+      const { error: invErr } = await adjustInventory(l.producto_id, Math.abs(l.cantidad), {
         tipo: 'ENTRADA', documento_tipo: 'COMPRA', documento_id: compra.id,
         motivo: `Compra ${numero}`,
       });
-      if (error) { setToast(`Error inventario: ${error}`); break; }
+      if (invErr) {
+        inventoryError = invErr;
+        break;
+      }
+      processedLines.push(l.producto_id);
       // Update product cost to last purchase cost
       await supabase.from('productos').update({ costo: l.costo_unitario }).eq('id', l.producto_id);
+    }
+
+    if (inventoryError) {
+      // Revert already-processed lines
+      for (const pid of processedLines) {
+        const line = form.lines.find((l) => l.producto_id === pid)!;
+        await adjustInventory(pid, -Math.abs(line.cantidad), {
+          tipo: 'SALIDA', documento_tipo: 'DEVOLUCION', documento_id: compra.id,
+          motivo: `Reversa por error en compra ${numero}`,
+        });
+      }
+      setToast(`Error inventario: ${inventoryError}`);
+      return;
     }
 
     await logAudit({ modulo: 'compras', accion: 'INSERT', tabla_afectada: 'compras', registro_id: compra.id, valor_nuevo: { numero, total, proveedor_id: form.proveedor_id } as any });

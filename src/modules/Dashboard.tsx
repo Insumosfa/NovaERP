@@ -188,16 +188,17 @@ export function Dashboard({ onNavigate }: { onNavigate: (m: Module) => void }) {
   );
 }
 
+// Use static Tailwind classes — dynamic class names are not purged correctly
 function EstadoBadge({ estado }: { estado: string }) {
-  const map: Record<string, { color: any; label: string }> = {
-    PENDIENTE: { color: 'slate', label: 'Pendiente' },
-    PENDIENTE_ENTREGA: { color: 'amber', label: 'Pend. Entrega' },
-    ENTREGADA: { color: 'blue', label: 'Entregada' },
-    PARCIALMENTE_PAGADA: { color: 'amber', label: 'Parcial' },
-    PAGADA: { color: 'green', label: 'Pagada' },
-    POR_COBRAR: { color: 'purple', label: 'Por Cobrar' },
-    CANCELADA: { color: 'red', label: 'Cancelada' },
+  const map: Record<string, { cls: string; label: string }> = {
+    PENDIENTE:          { cls: 'bg-slate-100 text-slate-700',   label: 'Pendiente' },
+    PENDIENTE_ENTREGA:  { cls: 'bg-amber-100 text-amber-700',   label: 'Pend. Entrega' },
+    ENTREGADA:          { cls: 'bg-blue-100 text-blue-700',     label: 'Entregada' },
+    PARCIALMENTE_PAGADA:{ cls: 'bg-amber-100 text-amber-700',   label: 'Parcial' },
+    PAGADA:             { cls: 'bg-emerald-100 text-emerald-700', label: 'Pagada' },
+    POR_COBRAR:         { cls: 'bg-violet-100 text-violet-700', label: 'Por Cobrar' },
+    CANCELADA:          { cls: 'bg-red-100 text-red-700',       label: 'Cancelada' },
   };
-  const cfg = map[estado] ?? { color: 'slate', label: estado };
-  return <span className={`badge bg-${cfg.color}-100 text-${cfg.color}-700`}>{cfg.label}</span>;
+  const cfg = map[estado] ?? { cls: 'bg-slate-100 text-slate-700', label: estado };
+  return <span className={`badge ${cfg.cls}`}>{cfg.label}</span>;
 }

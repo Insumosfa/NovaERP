@@ -52,6 +52,7 @@ export function Cobranza() {
   const removeLine = (i: number) => setLines(lines.filter((_, idx) => idx !== i));
 
   const totalPago = lines.reduce((s, l) => s + (Number(l.monto) || 0), 0);
+  const isMultiple = lines.filter((l) => l.monto > 0).length > 1;
 
   const registerPayment = async () => {
     if (!payOpen) return;
@@ -60,7 +61,8 @@ export function Cobranza() {
 
     for (const l of lines) {
       if (l.monto <= 0) continue;
-      const metodo = lines.length > 1 ? 'MIXTO' : l.metodo;
+      // Use real method per line; only label MIXTO when there are multiple active lines
+      const metodo = isMultiple ? 'MIXTO' : l.metodo;
       const { error } = await supabase.from('pagos_ventas').insert({
         venta_id: payOpen.id, monto: l.monto, metodo, fecha_pago: new Date().toISOString(),
         referencia: l.referencia || null, created_by: user?.id,
@@ -88,7 +90,7 @@ export function Cobranza() {
       await supabase.from('clientes').update({ saldo: Math.max(0, Number(cli.saldo) - totalPago) }).eq('id', payOpen.cliente_id);
     }
 
-    await logAudit({ modulo: 'cobranza', accion: 'INSERT', tabla_afectada: 'pagos_ventas', registro_id: payOpen.id, valor_nuevo: { total_pago: totalPago, metodo: lines.length > 1 ? 'MIXTO' : lines[0].metodo } as any });
+    await logAudit({ modulo: 'cobranza', accion: 'INSERT', tabla_afectada: 'pagos_ventas', registro_id: payOpen.id, valor_nuevo: { total_pago: totalPago, metodo: isMultiple ? 'MIXTO' : lines[0].metodo } as any });
     setToast(`Pago registrado: ${formatCurrency(totalPago)}`);
     setPayOpen(null);
     load();

@@ -70,12 +70,14 @@ export function Ventas() {
     if (form.lines.length === 0) { setToast('Agregue al menos un producto'); return; }
     if (form.lines.some((l) => !l.producto_id || l.cantidad <= 0)) { setToast('Revise las líneas'); return; }
 
-    // Stock check
-    for (const l of form.lines) {
-      const p = productos.find((x) => x.id === l.producto_id);
-      if (p && Number(p.stock) < l.cantidad) {
-        setToast(`Stock insuficiente para ${p.nombre} (disponible: ${p.stock})`);
-        return;
+    // Real-time stock check against DB (not stale local state)
+    if (form.tipo === 'VENTA') {
+      for (const l of form.lines) {
+        const { data: prod } = await supabase.from('productos').select('stock, nombre').eq('id', l.producto_id).maybeSingle();
+        if (prod && Number(prod.stock) < l.cantidad) {
+          setToast(`Stock insuficiente para ${prod.nombre} (disponible: ${prod.stock})`);
+          return;
+        }
       }
     }
 
@@ -98,13 +100,32 @@ export function Ventas() {
 
     // Inventory effect only for VENTA (not cotización)
     if (form.tipo === 'VENTA') {
+      const processedLines: string[] = [];
+      let inventoryError: string | null = null;
       for (const l of form.lines) {
-        const { error } = await adjustInventory(l.producto_id, -Math.abs(l.cantidad), {
+        const { error: invErr } = await adjustInventory(l.producto_id, -Math.abs(l.cantidad), {
           tipo: 'SALIDA', documento_tipo: 'VENTA', documento_id: venta.id,
           motivo: `Venta ${numero}`,
         });
-        if (error) { setToast(`Error inventario: ${error}`); break; }
+        if (invErr) {
+          inventoryError = invErr;
+          break;
+        }
+        processedLines.push(l.producto_id);
       }
+      if (inventoryError) {
+        // Revert already-processed lines
+        for (const pid of processedLines) {
+          const line = form.lines.find((l) => l.producto_id === pid)!;
+          await adjustInventory(pid, Math.abs(line.cantidad), {
+            tipo: 'ENTRADA', documento_tipo: 'DEVOLUCION', documento_id: venta.id,
+            motivo: `Reversa por error en venta ${numero}`,
+          });
+        }
+        setToast(`Error inventario: ${inventoryError}`);
+        return;
+      }
+
       // Create AR record
       const cliente = clientes.find((c) => c.id === form.cliente_id);
       const venc = new Date(); venc.setDate(venc.getDate() + 30);
@@ -142,8 +163,8 @@ export function Ventas() {
       if (cli) {
         await supabase.from('clientes').update({ saldo: Math.max(0, Number(cli.saldo) - Number(confirmCancel.total)) }).eq('id', confirmCancel.cliente_id);
       }
-      // Update AR
-      await supabase.from('cuentas_por_cobrar').update({ estado: 'VENCIDA', saldo: 0 }).eq('venta_id', confirmCancel.id);
+      // Update AR — mark as CANCELADA (not VENCIDA)
+      await supabase.from('cuentas_por_cobrar').update({ estado: 'CANCELADA', saldo: 0 }).eq('venta_id', confirmCancel.id);
     }
     await supabase.from('ventas').update({ estado: 'CANCELADA', saldo: 0, updated_by: user?.id }).eq('id', confirmCancel.id);
     await logAudit({ modulo: 'ventas', accion: 'CANCEL', tabla_afectada: 'ventas', registro_id: confirmCancel.id, valor_previo: { estado: confirmCancel.estado }, valor_nuevo: { estado: 'CANCELADA' } });
